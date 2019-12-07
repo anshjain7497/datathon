@@ -112,3 +112,46 @@ val$pred.rf <- predict(sample_random, newdata=val)
 #Validation for SVM
 val$pred.svm = predict(sampled_svm, newdata=val)
 
+#XGBoost and Validation
+library(xgboost)
+library(caTools)
+
+#Setting up the parameters
+param <- list(booster="gbtree", #gbtree for tree model #gblinear for linear model
+              objective="multi:softprob", #to get a probability
+              eval_metric="mlogloss",
+              #nthread=13, #number of parallel processing we need
+              num_class=3, 
+              eta = .01, #learning rate - smaller is better
+              gamma = 1, #loss reduction before moving on to next split (usually 1)
+              max_depth = 4, 
+              min_child_weight = 1, 
+              subsample = .7, #sampling from training data in every iteration of XGBoost
+              colsample_bytree = .5 #sample of columns to be sampled in every iteration
+)
+inAudience = sampled_result$inAudience
+label = sampled_result$inAudience
+sampled_result$inAudience = NULL
+
+n = nrow(sampled_result)
+train.index = sample(n,floor(0.75*n))
+train.data = as.matrix(sampled_result)
+train.label = label[train.index]
+xgb.train = xgb.DMatrix(data=train.data,label=train.label)
+
+#Running the model
+xgb.fit=xgb.train(
+  params=param,
+  data=xgb.train,
+  nrounds=5000,
+  nthreads=1,
+  early_stopping_rounds=10,
+  watchlist=list(val1=xgb.train,val2=xgb.test),
+  verbose=0
+)
+
+#Creating predictions for the validation data
+xgb.pred = predict(xgb.fit,val2, reshape = T)
+xgb.pred
+val$pred.xg.val = (xgb.pred[,1])
+val$pred.xg = ifelse(val$pred.xg.val < 0.5, 1, 0)
